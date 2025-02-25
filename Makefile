@@ -12,6 +12,6 @@ clean:
 
 dist:
 	@echo "Creating docker distribution..."
-	docker build -t lokiactor:latest .
+	docker build -t loki-actor:latest .
 	@echo "Docker distribution created."
 
