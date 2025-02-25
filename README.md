@@ -40,7 +40,7 @@ See [example-config.yml](example-config.yml) for more examples.
 
 ## How to run
 
-`lokiactor -config <path_to_config.yml>`
+`loki-actor -config <path_to_config.yml>`
 
 ## Docker compose
 
