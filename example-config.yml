@@ -1,0 +1,41 @@
+loki:
+  host: "loki.example.com"
+  port: 3100
+
+# each flow is built around separate query (to get a stream of logs)
+# in each flow, you can define multiple triggers, based on regex
+# in each trigger, you can define multiple actions
+# if multiple triggers fire for the same line, only the first one will be run
+
+flows:
+  - name: 'Example flow'
+    # LogQL query to get filtered logs from Loki. Be sure to adjust the query to match your log structure and make it
+    # more specific if needed.
+    query: '{compose_project="example", container_name =~ "example.*"}'
+    triggers:
+      - name: 'error'
+        # Regex to match error messages in logs. Is applied only to the message part of the log.
+        regex: 'ERR|ERROR'
+        # List of actions to perform, currently only 'run' is supported.
+        # 'run' executes a command with the specified arguments.
+        # substitutions are available for `${labels.*}` and `${values.ts} and ${values.message}`
+        # Navigate your logs in grafana to see the available labels for your project
+        actions:
+          - run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+          - run: [ 'curl', '-X', 'POST', '-H', 'Content-Type: application/json', '-d',
+                   '{ "text": ":bangbang: ${labels.host} - ${labels.container_name} - ${values.message}" }',
+                   'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX' ]
+      - name: 'warn'
+        regex: 'WARN'
+        actions:
+          - run: [ 'echo', '!!!!!', 'warning', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+          - run: [ 'curl', '-X', 'POST', '-H', 'Content-Type: application/json', '-d',
+                   '{ "text": ":warning: ${labels.host} - ${labels.container_name} - ${values.message}" }',
+                   'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX' ]
+      - name: 'java exception'
+        regex: '[Ee]xception'
+        actions:
+          - run: [ 'echo', '!!!!!', 'exception', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+          - run: [ 'curl', '-X', 'POST', '-H', 'Content-Type: application/json', '-d',
+                   '{ "text": ":boom: ${labels.host} - ${labels.container_name} - ${values.message}" }',
+                   'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX' ]
