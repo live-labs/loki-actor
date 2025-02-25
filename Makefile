@@ -2,7 +2,7 @@
 
 build:
 	@echo "Building the project..."
-	go build -o bin/loki-actor .
+	CGO_ENABLED=0 go build -o bin/loki-actor .
 	@echo "Build complete."
 
 clean:
