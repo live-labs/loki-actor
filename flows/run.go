@@ -127,7 +127,8 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 			slog.Info("Preparing action", "action", action.Run)
 
 			// substitude ${values.ts|message} and ${labels.*} in action.Run
-			command := action.Run
+			command := make([]string, len(action.Run))
+			copy(command, action.Run)
 
 			for i, v := range command {
 
