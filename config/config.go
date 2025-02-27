@@ -12,9 +12,11 @@ type Action struct {
 }
 
 type Trigger struct {
-	Name                 string `yaml:"name"`
-	Regex                string `yaml:"regex"`
-	IgnoreRegex          string `yaml:"ignore_regex"`
+	Name                 string  `yaml:"name"`
+	Regex                string  `yaml:"regex"`
+	IgnoreRegex          string  `yaml:"ignore_regex"`
+	DurationMs           int     `yaml:"duration_ms"` // duration in milliseconds to extract from the start of the message
+	ContinuationAction   *Action `yaml:"continuation_action"`
 	RegexpCompiled       *regexp.Regexp
 	IgnoreRegexpCompiled *regexp.Regexp
 	Actions              []Action `yaml:"actions"`

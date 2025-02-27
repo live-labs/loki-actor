@@ -16,6 +16,9 @@ import (
 	"time"
 )
 
+var multilineUntil time.Time       // the time until the multiline state is valid
+var multilineAction *config.Action // the action to run for the multiline flow
+
 func Run(ctx context.Context, flow config.Flow, loki config.Loki) {
 
 	slog.Info("Starting flow", "name", flow.Name)
@@ -114,10 +117,17 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 	messageEscaped := strings.ReplaceAll(message, "\"", "\\\"")
 	messageEscaped = "\"" + messageEscaped + "\""
 
-	//${labels.*}
+	if multilineAction != nil && multilineUntil.After(time.Now()) {
+		multilineAction = nil
+		slog.Info("Multiline action finished")
+	}
+
+	if multilineAction != nil {
+		runAction(*multilineAction, ts, message, messageEscaped, labels)
+		return
+	}
 
 	for _, trigger := range flow.Triggers {
-
 		if !trigger.RegexpCompiled.MatchString(message) {
 			continue
 		}
@@ -130,53 +140,66 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 		}
 
 		for _, action := range trigger.Actions {
-			slog.Info("Preparing action", "action", action.Run)
-
-			// substitude ${values.ts|message} and ${labels.*} in action.Run
-			command := make([]string, len(action.Run))
-			copy(command, action.Run)
-
-			for i, v := range command {
-
-				v = strings.ReplaceAll(v, "${values.ts}", ts)
-				v = strings.ReplaceAll(v, "${values.message}", message)
-				v = strings.ReplaceAll(v, "${values.message_escaped}", messageEscaped)
-
-				for lk, lv := range labels {
-					v = strings.ReplaceAll(v, fmt.Sprintf("${labels.%s}", lk), lv)
-				}
-
-				command[i] = v
-			}
-
-			slog.Info("Running action", "action", strings.Join(command, " "))
-
-			if len(command) == 0 {
-				slog.Warn("No command to run")
-				continue
-			}
-
-			var cmd *exec.Cmd
-
-			if len(command) == 1 {
-				cmd = exec.Command(command[0])
-			} else {
-				cmd = exec.Command(command[0], command[1:]...)
-			}
-
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-
-			err := cmd.Run()
-			if err != nil {
-				slog.Error("Failed to run command", "error", err)
-			} else {
-				slog.Info("Command completed successfully")
-			}
+			runAction(action, ts, message, messageEscaped, labels)
 
 		}
 
-		break // only one trigger per event
+		if trigger.DurationMs > 0 {
+			multilineAction = &trigger.Actions[0] // default
 
+			if trigger.ContinuationAction != nil {
+				multilineAction = trigger.ContinuationAction
+			}
+
+			multilineUntil = time.Now().Add(time.Duration(trigger.DurationMs) * time.Millisecond)
+		}
+
+		break // only one trigger per event
+	}
+}
+
+func runAction(action config.Action, ts string, message string, messageEscaped string, labels map[string]string) {
+	slog.Info("Preparing action", "action", action.Run)
+
+	// substitude ${values.ts|message} and ${labels.*} in action.Run
+	command := make([]string, len(action.Run))
+	copy(command, action.Run)
+
+	for i, v := range command {
+
+		v = strings.ReplaceAll(v, "${values.ts}", ts)
+		v = strings.ReplaceAll(v, "${values.message}", message)
+		v = strings.ReplaceAll(v, "${values.message_escaped}", messageEscaped)
+
+		for lk, lv := range labels {
+			v = strings.ReplaceAll(v, fmt.Sprintf("${labels.%s}", lk), lv)
+		}
+
+		command[i] = v
+	}
+
+	slog.Info("Running action", "action", strings.Join(command, " "))
+
+	if len(command) == 0 {
+		slog.Warn("No command to run")
+		return
+	}
+
+	var cmd *exec.Cmd
+
+	if len(command) == 1 {
+		cmd = exec.Command(command[0])
+	} else {
+		cmd = exec.Command(command[0], command[1:]...)
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		slog.Error("Failed to run command", "error", err)
+	} else {
+		slog.Info("Command completed successfully")
 	}
 }
