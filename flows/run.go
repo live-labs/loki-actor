@@ -33,6 +33,7 @@ func Run(ctx context.Context, flow config.Flow, loki config.Loki) {
 		}
 
 		start := time.Now().Add(-delay) // start from now - delay (in case of retry)
+		//start := time.Now().Add(-time.Minute * 30)
 		lokiURL := url.URL{
 			Scheme: "ws",
 			Host:   fmt.Sprintf("%s:%d", loki.Host, loki.Port),
@@ -110,6 +111,15 @@ func processLokiEvent(event loki.Event, flow config.Flow) {
 func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 	// available as ${values.ts}
 	ts := line[0]
+
+	tsInt, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		slog.Error("Failed to parse timestamp", "error", err)
+		return
+	}
+
+	timestamp := time.Unix(0, tsInt)
+
 	// available as ${values.message}
 	message := line[1]
 
@@ -117,12 +127,14 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 	messageEscaped := strings.ReplaceAll(message, "\"", "\\\"")
 	messageEscaped = "\"" + messageEscaped + "\""
 
-	if multilineAction != nil && multilineUntil.After(time.Now()) {
+	if multilineAction != nil && multilineUntil.Before(timestamp) {
 		multilineAction = nil
+		multilineUntil = time.Time{}
 		slog.Info("Multiline action finished")
 	}
 
 	if multilineAction != nil {
+		slog.Debug("Continuing multiline action", "message", message)
 		runAction(*multilineAction, ts, message, messageEscaped, labels)
 		return
 	}
@@ -151,7 +163,7 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 				multilineAction = trigger.ContinuationAction
 			}
 
-			multilineUntil = time.Now().Add(time.Duration(trigger.DurationMs) * time.Millisecond)
+			multilineUntil = timestamp.Add(time.Duration(trigger.DurationMs) * time.Millisecond)
 		}
 
 		break // only one trigger per event
@@ -198,8 +210,8 @@ func runAction(action config.Action, ts string, message string, messageEscaped s
 
 	err := cmd.Run()
 	if err != nil {
-		slog.Error("Failed to run command", "error", err)
+		slog.Error("Failed to run action", "error", err)
 	} else {
-		slog.Info("Command completed successfully")
+		slog.Info("Action completed successfully")
 	}
 }
