@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"gopkg.in/yaml.v3"
 	"os"
 	"regexp"
@@ -11,10 +12,12 @@ type Action struct {
 }
 
 type Trigger struct {
-	Name           string `yaml:"name"`
-	Regex          string `yaml:"regex"`
-	RegexpCompiled *regexp.Regexp
-	Actions        []Action `yaml:"actions"`
+	Name                 string `yaml:"name"`
+	Regex                string `yaml:"regex"`
+	IgnoreRegex          string `yaml:"ignore_regex"`
+	RegexpCompiled       *regexp.Regexp
+	IgnoreRegexpCompiled *regexp.Regexp
+	Actions              []Action `yaml:"actions"`
 }
 
 type Flow struct {
@@ -48,9 +51,18 @@ func Load(path string) (*Config, error) {
 		for j, trigger := range flow.Triggers {
 			re, err := regexp.Compile(trigger.Regex)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to compile trigger %s regex %q: %w", trigger.Name, trigger.Regex, err)
 			}
 			config.Flows[i].Triggers[j].RegexpCompiled = re
+
+			if trigger.IgnoreRegex != "" {
+				ignoreRe, err := regexp.Compile(trigger.IgnoreRegex)
+				if err != nil {
+					return nil, fmt.Errorf("failed to compile trigger %s ignore_regex %q: %w", trigger.Name, trigger.IgnoreRegex, err)
+				}
+				config.Flows[i].Triggers[j].IgnoreRegexpCompiled = ignoreRe
+			}
+
 		}
 	}
 

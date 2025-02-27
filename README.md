@@ -28,6 +28,7 @@ flows:
       - name: 'error'
         # Regex to match error messages in logs. Is applied only to the message part of the log.
         regex: 'ERR|ERROR'
+        ignore_regex: 'Authentication failed'
         # List of actions to perform, currently only 'run' is supported.
         # 'run' executes a command with the specified arguments.
         # substitutions are available for `${labels.*}` and `${values.ts} and ${values.message}`

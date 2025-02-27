@@ -123,6 +123,12 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 		}
 
 		slog.Debug("Trigger matched", "trigger", trigger.Name, "regexp", trigger.Regex, "message", message)
+
+		if trigger.IgnoreRegexpCompiled != nil && trigger.IgnoreRegexpCompiled.MatchString(message) {
+			slog.Debug("Trigger ignored", "trigger", trigger.Name, "ignore_regexp", trigger.IgnoreRegex, "message", message)
+			continue
+		}
+
 		for _, action := range trigger.Actions {
 			slog.Info("Preparing action", "action", action.Run)
 
