@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const RFC3339_MILLI = "2006-01-02T15:04:05.000Z"
+
 var multilineUntil time.Time       // the time until the multiline state is valid
 var multilineAction *config.Action // the action to run for the multiline flow
 
@@ -135,7 +137,7 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 
 	if multilineAction != nil {
 		slog.Debug("Continuing multiline action", "message", message)
-		runAction(*multilineAction, ts, message, messageEscaped, labels)
+		runAction(*multilineAction, timestamp, message, messageEscaped, labels)
 		return
 	}
 
@@ -152,7 +154,7 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 		}
 
 		for _, action := range trigger.Actions {
-			runAction(action, ts, message, messageEscaped, labels)
+			runAction(action, timestamp, message, messageEscaped, labels)
 
 		}
 
@@ -170,16 +172,18 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 	}
 }
 
-func runAction(action config.Action, ts string, message string, messageEscaped string, labels map[string]string) {
+func runAction(action config.Action, timestamp time.Time, message string, messageEscaped string, labels map[string]string) {
 	slog.Info("Preparing action", "action", action.Run)
 
 	// substitude ${values.ts|message} and ${labels.*} in action.Run
 	command := make([]string, len(action.Run))
 	copy(command, action.Run)
 
+	timeStr := timestamp.Format(RFC3339_MILLI)
+
 	for i, v := range command {
 
-		v = strings.ReplaceAll(v, "${values.ts}", ts)
+		v = strings.ReplaceAll(v, "${values.ts}", timeStr)
 		v = strings.ReplaceAll(v, "${values.message}", message)
 		v = strings.ReplaceAll(v, "${values.message_escaped}", messageEscaped)
 
