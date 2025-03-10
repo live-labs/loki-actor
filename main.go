@@ -44,10 +44,10 @@ func main() {
 		cancel()
 	}()
 
-	for _, flow := range cfg.Flows {
-		go func(flow config.Flow) {
-			flows.Run(ctx, flow, cfg.Loki)
-		}(flow)
+	for _, flowCfg := range cfg.Flows {
+		flow := flows.New(ctx, flowCfg, cfg.Loki)
+		go flow.Run()
+		slog.Debug("Flow created", "name", flowCfg.Name, "query", flowCfg.Query)
 	}
 
 	<-ctx.Done()

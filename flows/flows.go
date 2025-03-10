@@ -18,19 +18,33 @@ import (
 
 const RFC3339_MILLI = "2006-01-02T15:04:05.000Z"
 
-var continuationAction *config.Action // the action to run for the multiline flow
-var continuationLines int
+type Flow struct {
+	ctx     context.Context
+	cfg     config.Flow
+	lokiCfg config.Loki
 
-func Run(ctx context.Context, flow config.Flow, loki config.Loki) {
+	continuationAction *config.Action // the action to run for the multiline flow
+	continuationLines  int
+}
 
-	slog.Info("Starting flow", "name", flow.Name)
+func New(ctx context.Context, cfg config.Flow, lokiCfg config.Loki) *Flow {
+	return &Flow{
+		ctx:     ctx,
+		cfg:     cfg,
+		lokiCfg: lokiCfg,
+	}
+}
+
+func (f *Flow) Run() {
+
+	slog.Info("Starting flow", "name", f.cfg.Name)
 
 	delay := time.Duration(0)
 
 	for {
 		select {
-		case <-ctx.Done():
-			slog.Info("Flow cancelled", "name", flow.Name)
+		case <-f.ctx.Done():
+			slog.Info("Flow cancelled", "name", f.cfg.Name)
 		case <-time.After(delay):
 		}
 
@@ -38,11 +52,11 @@ func Run(ctx context.Context, flow config.Flow, loki config.Loki) {
 		//start := time.Now().Add(-time.Minute * 30)
 		lokiURL := url.URL{
 			Scheme: "ws",
-			Host:   fmt.Sprintf("%s:%d", loki.Host, loki.Port),
+			Host:   fmt.Sprintf("%s:%d", f.lokiCfg.Host, f.lokiCfg.Port),
 			Path:   "/loki/api/v1/tail",
 		}
 		query := lokiURL.Query()
-		query.Set("query", flow.Query)
+		query.Set("query", f.cfg.Query)
 		query.Set("start", strconv.FormatInt(start.UnixNano(), 10))
 		lokiURL.RawQuery = query.Encode()
 
@@ -52,7 +66,7 @@ func Run(ctx context.Context, flow config.Flow, loki config.Loki) {
 		delay = 5 * time.Second
 
 		slog.Info("Connecting to Loki stream", "url", urlStr)
-		conn, response, err := websocket.Dial(ctx, urlStr, nil)
+		conn, response, err := websocket.Dial(f.ctx, urlStr, nil)
 		if err != nil {
 			slog.Error("Failed to connect to Loki stream", "error", err)
 			continue
@@ -67,13 +81,13 @@ func Run(ctx context.Context, flow config.Flow, loki config.Loki) {
 
 		conn.SetReadLimit(-1)
 
-		processMessages(ctx, flow, conn)
+		f.processMessages(conn)
 	}
 }
 
-func processMessages(ctx context.Context, flow config.Flow, conn *websocket.Conn) {
+func (f *Flow) processMessages(conn *websocket.Conn) {
 	for {
-		websocketMessageType, websocketMessage, err := conn.Read(ctx)
+		websocketMessageType, websocketMessage, err := conn.Read(f.ctx)
 
 		if err != nil {
 			slog.Error("Failed to read from websocket", "error", err)
@@ -96,21 +110,21 @@ func processMessages(ctx context.Context, flow config.Flow, conn *websocket.Conn
 		// we have an event, so now we have to go through all of the triggers
 		// and see if any of them match the event
 
-		processLokiEvent(event, flow)
+		f.processLokiEvent(event)
 
 	}
 }
 
-func processLokiEvent(event loki.Event, flow config.Flow) {
+func (f *Flow) processLokiEvent(event loki.Event) {
 	for _, stream := range event.Streams {
 		lines := stream.Values
 		for _, line := range lines {
-			processLogLine(line, stream.Details, flow)
+			f.processLogLine(line, stream.Details)
 		}
 	}
 }
 
-func processLogLine(line []string, labels map[string]string, flow config.Flow) {
+func (f *Flow) processLogLine(line []string, labels map[string]string) {
 	// available as ${values.ts}
 	ts := line[0]
 
@@ -129,19 +143,19 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 	messageEscaped := strings.ReplaceAll(message, "\"", "\\\"")
 	messageEscaped = "\"" + messageEscaped + "\""
 
-	if continuationLines <= 0 && continuationAction != nil {
-		continuationAction = nil
+	if f.continuationLines <= 0 && f.continuationAction != nil {
+		f.continuationAction = nil
 		slog.Info("Finished multiline action")
 	}
 
-	if continuationAction != nil {
+	if f.continuationAction != nil {
 		slog.Debug("Continuing multiline action", "message", message)
-		runAction(*continuationAction, timestamp, message, messageEscaped, labels)
-		continuationLines--
+		f.runAction(*f.continuationAction, timestamp, message, messageEscaped, labels)
+		f.continuationLines--
 		return
 	}
 
-	for _, trigger := range flow.Triggers {
+	for _, trigger := range f.cfg.Triggers {
 		if !trigger.RegexpCompiled.MatchString(message) {
 			continue
 		}
@@ -154,26 +168,26 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 		}
 
 		for _, action := range trigger.Actions {
-			runAction(action, timestamp, message, messageEscaped, labels)
+			f.runAction(action, timestamp, message, messageEscaped, labels)
 
 		}
 
 		if trigger.ContinuationLines > 0 {
 			if len(trigger.Actions) > 0 {
-				continuationAction = &trigger.Actions[0] // default
+				f.continuationAction = &trigger.Actions[0] // default
 			}
 
 			if trigger.ContinuationAction != nil {
-				continuationAction = trigger.ContinuationAction
+				f.continuationAction = trigger.ContinuationAction
 			}
 
-			if continuationAction == nil {
+			if f.continuationAction == nil {
 				slog.Warn("No continuation action defined")
-				continuationLines = 0
+				f.continuationLines = 0
 				break
 			}
 
-			continuationLines = trigger.ContinuationLines
+			f.continuationLines = trigger.ContinuationLines
 
 		}
 
@@ -181,7 +195,7 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 	}
 }
 
-func runAction(action config.Action, timestamp time.Time, message string, messageEscaped string, labels map[string]string) {
+func (f *Flow) runAction(action config.Action, timestamp time.Time, message string, messageEscaped string, labels map[string]string) {
 	slog.Info("Preparing action", "action", action.Run)
 
 	// substitude ${values.ts|message} and ${labels.*} in action.Run
