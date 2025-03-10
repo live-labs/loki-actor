@@ -18,8 +18,8 @@ import (
 
 const RFC3339_MILLI = "2006-01-02T15:04:05.000Z"
 
-var multilineUntil time.Time       // the time until the multiline state is valid
-var multilineAction *config.Action // the action to run for the multiline flow
+var continuationAction *config.Action // the action to run for the multiline flow
+var continuationLines int
 
 func Run(ctx context.Context, flow config.Flow, loki config.Loki) {
 
@@ -129,15 +129,15 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 	messageEscaped := strings.ReplaceAll(message, "\"", "\\\"")
 	messageEscaped = "\"" + messageEscaped + "\""
 
-	if multilineAction != nil && multilineUntil.Before(timestamp) {
-		multilineAction = nil
-		multilineUntil = time.Time{}
-		slog.Info("Multiline action finished")
+	if continuationLines <= 0 && continuationAction != nil {
+		continuationAction = nil
+		slog.Info("Finished multiline action")
 	}
 
-	if multilineAction != nil {
+	if continuationAction != nil {
 		slog.Debug("Continuing multiline action", "message", message)
-		runAction(*multilineAction, timestamp, message, messageEscaped, labels)
+		runAction(*continuationAction, timestamp, message, messageEscaped, labels)
+		continuationLines--
 		return
 	}
 
@@ -158,14 +158,23 @@ func processLogLine(line []string, labels map[string]string, flow config.Flow) {
 
 		}
 
-		if trigger.DurationMs > 0 {
-			multilineAction = &trigger.Actions[0] // default
-
-			if trigger.ContinuationAction != nil {
-				multilineAction = trigger.ContinuationAction
+		if trigger.ContinuationLines > 0 {
+			if len(trigger.Actions) > 0 {
+				continuationAction = &trigger.Actions[0] // default
 			}
 
-			multilineUntil = timestamp.Add(time.Duration(trigger.DurationMs) * time.Millisecond)
+			if trigger.ContinuationAction != nil {
+				continuationAction = trigger.ContinuationAction
+			}
+
+			if continuationAction == nil {
+				slog.Warn("No continuation action defined")
+				continuationLines = 0
+				break
+			}
+
+			continuationLines = trigger.ContinuationLines
+
 		}
 
 		break // only one trigger per event

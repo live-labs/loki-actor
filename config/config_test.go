@@ -31,7 +31,7 @@ flows:
       - name: "Trigger2"
         regex: ".*test.*"
         ignore_regex: "^ignore$"
-        duration_ms: 1000
+        continuation_lines: 30
         continuation_action:
           run: [ 'echo', '!!!!!', 'exception', '${labels.host}', '${labels.container_name}', '${values.message}' ]
         actions:

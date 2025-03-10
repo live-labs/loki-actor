@@ -38,11 +38,8 @@ flows:
       - name: 'java exception'
         regex: 'Exception\:'
         ignore_regex: 'Caused by\:'
-        duration_ms: 1000    # extract all the lines after the first match for 1 second
+        continuation_lines: 30    # extract all the lines after the first match for 1 second
         continuation_action: # all lines except the first one will be passed to this action during duration_ms
           run: [ 'echo', '${values.message}' ]
         actions:
           - run: [ 'echo', '!!!!!', 'exception', '${labels.host}', '${labels.container_name}', '${values.message}' ]
-          - run: [ 'curl', '-X', 'POST', '-H', 'Content-Type: application/json', '-d',
-                   '{ "text": ":boom: ${labels.host} - ${labels.container_name} - ${values.message}" }',
-                   'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX' ]
