@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/live-labs/lokiactor/config"
 	"github.com/live-labs/lokiactor/flows"
+	"gopkg.in/yaml.v3"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -33,7 +36,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	slog.Debug("Configuration loaded", "config", cfg)
+	sb := strings.Builder{}
+	enc := yaml.NewEncoder(&sb)
+
+	enc.SetIndent(2)
+	err = enc.Encode(cfg)
+
+	if err != nil {
+		slog.Error("Failed to re-encode configuration", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Debug("Configuration loaded:")
+	fmt.Println(sb.String())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan os.Signal, 1)

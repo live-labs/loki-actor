@@ -7,6 +7,31 @@ loki:
 # - Each flow contains a query and array of triggers
 # - Each trigger has an action or, in case of multiline trigger - two actions (one for first line and one for subsequent lines)
 
+# - map of key-value pairs
+actions:
+  base_slack_action:
+    type: 'slack'
+    slack_webhook_url: 'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXX'
+  err_action:
+    type: 'cmd'
+    cmd_run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+  warn_action:
+    type: 'slack'
+    extends: base_slack_action
+    # Slack message can be customized using the same variable substitution
+    slack_message_template: |
+      *Warning in ${labels.container_name} on ${labels.host}*
+      ```
+      ${values.message}
+      ```
+    slack_timeout_sec: 5
+  exception_line_1:
+    type: 'cmd'
+    cmd_run: [ 'echo', '!!!!!', 'exception', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+  exception_line_N:
+    type: 'cmd'
+    cmd_run: [ 'echo', '${values.message}' ]
+
 flows:
   - name: 'Example flow'
     # LogQL query defines the log stream source
@@ -25,30 +50,15 @@ flows:
         # - ${labels.*}: Any label from your Loki logs
         # - ${values.ts}: Timestamp
         # - ${values.message}: Log message content
-        action:
-          type: 'cmd'
-          cmd_run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+        action: err_action
       - name: 'warn'
         regex: 'WARN'
-        action:
-          type: 'slack'
-          slack_webhook_url: 'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX'
-          # Slack message can be customized using the same variable substitution
-          slack_message_template: |
-            *Warning in ${labels.container_name} on ${labels.host}*
-            ```
-            ${values.message}
-            ```
-          slack_timeout_sec: 5
+        action: warn_action
       - name: 'java exception'
         regex: 'Exception\:'
         ignore_regex: 'Caused by\:'
         # Number of subsequent lines to capture after the matching line
         lines: 30
-        action:
-          type: 'cmd'
-          cmd_run: [ 'echo', '!!!!!', 'exception', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+        action: exception_line_1
         # Separate action for processing additional captured lines
-        next_lines_action:
-          type: 'cmd'
-          cmd_run: [ 'echo', '${values.message}' ]
+        next_lines_action: exception_line_N

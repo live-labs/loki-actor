@@ -19,6 +19,13 @@ loki:
 # in each trigger, you can define an action to execute
 # if multiple triggers fire for the same line, only the first one will be run
 
+actions:
+  base_action:
+    type: 'cmd'
+    cmd_run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+  example:
+    extends: base_action
+
 flows:
   - name: 'Example flow'
     # LogQL query to get filtered logs from Loki. Be sure to adjust the query to match your log structure and make it
@@ -33,9 +40,7 @@ flows:
         # 'run' executes a command with the specified arguments.
         # substitutions are available for `${labels.*}` and `${values.ts} and ${values.message}`
         # Navigate your logs in grafana to see the available labels for your project
-        action:
-          type: 'cmd'
-          cmd_run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+        action: example
 ```
 
 See [example-config.yml](example-config.yml) for more examples.
