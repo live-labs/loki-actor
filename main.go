@@ -44,10 +44,21 @@ func main() {
 		cancel()
 	}()
 
+	fls := make([]*flows.Flow, 0, len(cfg.Flows))
+
 	for _, flowCfg := range cfg.Flows {
-		flow := flows.New(ctx, flowCfg, cfg.Loki)
-		go flow.Run()
+		flow, err := flows.New(ctx, flowCfg, cfg.Loki)
+		if err != nil {
+			slog.Error("Failed to create flow", "error", err)
+			os.Exit(1)
+		}
+		fls = append(fls, flow)
 		slog.Debug("Flow created", "name", flowCfg.Name, "query", flowCfg.Query)
+	}
+
+	for _, flow := range fls {
+		go flow.Run()
+		slog.Debug("Flow started", "name", flow.Name())
 	}
 
 	<-ctx.Done()

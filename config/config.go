@@ -1,25 +1,31 @@
 package config
 
 import (
-	"fmt"
+	"bytes"
 	"gopkg.in/yaml.v3"
 	"os"
-	"regexp"
 )
 
 type Action struct {
-	Run []string `yaml:"run"`
+	Type string `yaml:"type"` // slack, cmd
+
+	// slack action
+	SlackWebhookURL      string `yaml:"slack_webhook_url"`
+	SlackTimeoutSec      int64  `yaml:"slack_timeout_sec"`
+	SlackMessageTemplate string `yaml:"slack_message_template"`
+
+	// cmd action
+	CmdRun []string `yaml:"cmd_run"`
 }
 
 type Trigger struct {
-	Name                 string  `yaml:"name"`
-	Regex                string  `yaml:"regex"`
-	IgnoreRegex          string  `yaml:"ignore_regex"`
-	ContinuationLines    int     `yaml:"continuation_lines"`
-	ContinuationAction   *Action `yaml:"continuation_action"`
-	RegexpCompiled       *regexp.Regexp
-	IgnoreRegexpCompiled *regexp.Regexp
-	Actions              []Action `yaml:"actions"`
+	Name        string `yaml:"name"`
+	Regex       string `yaml:"regex"`
+	IgnoreRegex string `yaml:"ignore_regex"`
+
+	Lines           int     `yaml:"lines"`
+	Action          Action  `yaml:"action"`
+	NextLinesAction *Action `yaml:"next_lines_action"` // if lines > 0
 }
 
 type Flow struct {
@@ -44,28 +50,12 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+
 	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if err := dec.Decode(&config); err != nil {
 		return nil, err
-	}
-
-	for i, flow := range config.Flows {
-		for j, trigger := range flow.Triggers {
-			re, err := regexp.Compile(trigger.Regex)
-			if err != nil {
-				return nil, fmt.Errorf("failed to compile trigger %s regex %q: %w", trigger.Name, trigger.Regex, err)
-			}
-			config.Flows[i].Triggers[j].RegexpCompiled = re
-
-			if trigger.IgnoreRegex != "" {
-				ignoreRe, err := regexp.Compile(trigger.IgnoreRegex)
-				if err != nil {
-					return nil, fmt.Errorf("failed to compile trigger %s ignore_regex %q: %w", trigger.Name, trigger.IgnoreRegex, err)
-				}
-				config.Flows[i].Triggers[j].IgnoreRegexpCompiled = ignoreRe
-			}
-
-		}
 	}
 
 	return &config, nil

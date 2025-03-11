@@ -2,44 +2,53 @@ loki:
   host: "loki.example.com"
   port: 3100
 
-# each flow is built around separate query (to get a stream of logs)
-# in each flow, you can define multiple triggers, based on regex
-# in each trigger, you can define multiple actions
-# if multiple triggers fire for the same line, only the first one will be run
+# Configuration is organized in a hierarchical structure:
+# - Root level contains Loki connection settings and flows array
+# - Each flow contains a query and array of triggers
+# - Each trigger has an action or, in case of multiline trigger - two actions (one for first line and one for subsequent lines)
 
 flows:
   - name: 'Example flow'
-    # LogQL query to get filtered logs from Loki. Be sure to adjust the query to match your log structure and make it
-    # more specific if needed.
+    # LogQL query defines the log stream source
+    # Adjust the query according to your log labels and requirements
     query: '{compose_project="example", container_name =~ "example.*"}'
     triggers:
       - name: 'error'
-        # Regex to match error messages in logs. Is applied only to the message part of the log.
+        # Pattern to match in the log message portion
         regex: 'ERR|ERROR'
 
-        # Regex to ignore certain messages. Is applied only to the message part of the log.
+        # Optional exclusion pattern to prevent matching on specific messages
         ignore_regex: 'set to ERROR'
-        # List of actions to perform, currently only 'run' is supported.
-        # 'run' executes a command with the specified arguments.
-        # substitutions are available for `${labels.*}` and `${values.ts} and ${values.message}`
-        # Navigate your logs in grafana to see the available labels for your project
-        actions:
-          - run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
-          - run: [ 'curl', '-X', 'POST', '-H', 'Content-Type: application/json', '-d',
-                   '{ "text": ":bangbang: ${labels.host} - ${labels.container_name} - ${values.message}" }',
-                   'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX' ]
+        # Action defines what happens when trigger conditions are met
+        # Supports variable substitution using ${labels.*} and ${values.*}
+        # Available values:
+        # - ${labels.*}: Any label from your Loki logs
+        # - ${values.ts}: Timestamp
+        # - ${values.message}: Log message content
+        action:
+          type: 'cmd'
+          cmd_run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
       - name: 'warn'
         regex: 'WARN'
-        actions:
-          - run: [ 'echo', '!!!!!', 'warning', '${labels.host}', '${labels.container_name}', '${values.message}' ]
-          - run: [ 'curl', '-X', 'POST', '-H', 'Content-Type: application/json', '-d',
-                   '{ "text": ":warning: ${labels.host} - ${labels.container_name} - ${values.message}" }',
-                   'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX' ]
+        action:
+          type: 'slack'
+          slack_webhook_url: 'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXXXXXXXXX'
+          # Slack message can be customized using the same variable substitution
+          slack_message_template: |
+            *Warning in ${labels.container_name} on ${labels.host}*
+            ```
+            ${values.message}
+            ```
+          slack_timeout_sec: 5
       - name: 'java exception'
         regex: 'Exception\:'
         ignore_regex: 'Caused by\:'
-        continuation_lines: 30    # extract all the lines after the first match for 1 second
-        continuation_action: # all lines except the first one will be passed to this action during duration_ms
-          run: [ 'echo', '${values.message}' ]
-        actions:
-          - run: [ 'echo', '!!!!!', 'exception', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+        # Number of subsequent lines to capture after the matching line
+        lines: 30
+        action:
+          type: 'cmd'
+          cmd_run: [ 'echo', '!!!!!', 'exception', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+        # Separate action for processing additional captured lines
+        next_lines_action:
+          type: 'cmd'
+          cmd_run: [ 'echo', '${values.message}' ]

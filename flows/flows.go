@@ -5,58 +5,76 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/coder/websocket"
+	"github.com/live-labs/lokiactor/actions"
 	"github.com/live-labs/lokiactor/config"
 	"github.com/live-labs/lokiactor/loki"
+	"github.com/live-labs/lokiactor/triggers"
 	"log/slog"
 	"net/url"
-	"os"
-	"os/exec"
 	"strconv"
-	"strings"
 	"time"
 )
 
-const RFC3339_MILLI = "2006-01-02T15:04:05.000Z"
-
 type Flow struct {
-	ctx     context.Context
-	cfg     config.Flow
+	ctx      context.Context
+	name     string
+	query    string
+	triggers []*triggers.Trigger
+
 	lokiCfg config.Loki
 
-	continuationAction *config.Action // the action to run for the multiline flow
+	continuationAction actions.Action // the action to run for the multiline flow
 	continuationLines  int
 }
 
-func New(ctx context.Context, cfg config.Flow, lokiCfg config.Loki) *Flow {
-	return &Flow{
-		ctx:     ctx,
-		cfg:     cfg,
-		lokiCfg: lokiCfg,
+func New(ctx context.Context, cfg config.Flow, lokiCfg config.Loki) (*Flow, error) {
+
+	tgz := make([]*triggers.Trigger, len(cfg.Triggers))
+
+	for i, trigger := range cfg.Triggers {
+		t, err := triggers.New(trigger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create trigger %s: %w", trigger.Name, err)
+		}
+
+		tgz[i] = t
 	}
+
+	return &Flow{
+		ctx:      ctx,
+		name:     cfg.Name,
+		query:    cfg.Query,
+		triggers: tgz,
+
+		lokiCfg: lokiCfg,
+	}, nil
+}
+
+func (f *Flow) Name() string {
+	return f.name
 }
 
 func (f *Flow) Run() {
 
-	slog.Info("Starting flow", "name", f.cfg.Name)
+	slog.Info("Starting flow", "name", f.name)
 
 	delay := time.Duration(0)
 
 	for {
 		select {
 		case <-f.ctx.Done():
-			slog.Info("Flow cancelled", "name", f.cfg.Name)
+			slog.Info("Flow cancelled", "name", f.name)
 		case <-time.After(delay):
 		}
 
 		start := time.Now().Add(-delay) // start from now - delay (in case of retry)
-		//start := time.Now().Add(-time.Minute * 30)
 		lokiURL := url.URL{
 			Scheme: "ws",
 			Host:   fmt.Sprintf("%s:%d", f.lokiCfg.Host, f.lokiCfg.Port),
 			Path:   "/loki/api/v1/tail",
 		}
 		query := lokiURL.Query()
-		query.Set("query", f.cfg.Query)
+		query.Set("query", f.query)
 		query.Set("start", strconv.FormatInt(start.UnixNano(), 10))
 		lokiURL.RawQuery = query.Encode()
 
@@ -139,10 +157,6 @@ func (f *Flow) processLogLine(line []string, labels map[string]string) {
 	// available as ${values.message}
 	message := line[1]
 
-	// available as ${values.message_escaped}
-	messageEscaped := strings.ReplaceAll(message, "\"", "\\\"")
-	messageEscaped = "\"" + messageEscaped + "\""
-
 	if f.continuationLines <= 0 && f.continuationAction != nil {
 		f.continuationAction = nil
 		slog.Info("Finished multiline action")
@@ -150,95 +164,51 @@ func (f *Flow) processLogLine(line []string, labels map[string]string) {
 
 	if f.continuationAction != nil {
 		slog.Debug("Continuing multiline action", "message", message)
-		f.runAction(*f.continuationAction, timestamp, message, messageEscaped, labels)
+
+		err = f.continuationAction.Execute(timestamp, message, labels)
 		f.continuationLines--
+
+		if err != nil {
+			slog.Error("Failed to run continuation action", "error", err)
+		}
+
 		return
 	}
 
-	for _, trigger := range f.cfg.Triggers {
-		if !trigger.RegexpCompiled.MatchString(message) {
+	for _, trigger := range f.triggers {
+		if !trigger.Regex.MatchString(message) {
 			continue
 		}
 
-		slog.Debug("Trigger matched", "trigger", trigger.Name, "regexp", trigger.Regex, "message", message)
+		slog.Debug("Trigger matched", "trigger", trigger.Name, "regexp", trigger.Regex.String(), "message", message)
 
-		if trigger.IgnoreRegexpCompiled != nil && trigger.IgnoreRegexpCompiled.MatchString(message) {
-			slog.Debug("Trigger ignored", "trigger", trigger.Name, "ignore_regexp", trigger.IgnoreRegex, "message", message)
+		if trigger.IgnoreRegex != nil && trigger.IgnoreRegex.MatchString(message) {
+			slog.Debug("Trigger ignored", "trigger", trigger.Name, "ignore_regexp", trigger.IgnoreRegex.String(), "message", message)
 			continue
 		}
 
-		for _, action := range trigger.Actions {
-			f.runAction(action, timestamp, message, messageEscaped, labels)
-
+		err := trigger.Action.Execute(timestamp, message, labels)
+		if err != nil {
+			slog.Error("Failed to run action", "error", err)
+			return
 		}
 
-		if trigger.ContinuationLines > 0 {
-			if len(trigger.Actions) > 0 {
-				f.continuationAction = &trigger.Actions[0] // default
+		if trigger.Lines > 0 {
+
+			slog.Debug("Starting multiline action", "trigger", trigger.Name, "lines", trigger.Lines)
+
+			f.continuationLines = trigger.Lines
+			f.continuationAction = trigger.NextLinesAction
+
+			err = f.continuationAction.Execute(timestamp, message, labels)
+			if err != nil {
+				slog.Error("Failed to run continuation action", "error", err)
 			}
 
-			if trigger.ContinuationAction != nil {
-				f.continuationAction = trigger.ContinuationAction
-			}
-
-			if f.continuationAction == nil {
-				slog.Warn("No continuation action defined")
-				f.continuationLines = 0
-				break
-			}
-
-			f.continuationLines = trigger.ContinuationLines
+			return
 
 		}
 
 		break // only one trigger per event
-	}
-}
-
-func (f *Flow) runAction(action config.Action, timestamp time.Time, message string, messageEscaped string, labels map[string]string) {
-	slog.Info("Preparing action", "action", action.Run)
-
-	// substitude ${values.ts|message} and ${labels.*} in action.Run
-	command := make([]string, len(action.Run))
-	copy(command, action.Run)
-
-	timeStr := timestamp.Format(RFC3339_MILLI)
-
-	for i, v := range command {
-
-		v = strings.ReplaceAll(v, "${values.ts}", timeStr)
-		v = strings.ReplaceAll(v, "${values.message}", message)
-		v = strings.ReplaceAll(v, "${values.message_escaped}", messageEscaped)
-
-		for lk, lv := range labels {
-			v = strings.ReplaceAll(v, fmt.Sprintf("${labels.%s}", lk), lv)
-		}
-
-		command[i] = v
-	}
-
-	slog.Info("Running action", "action", strings.Join(command, " "))
-
-	if len(command) == 0 {
-		slog.Warn("No command to run")
-		return
-	}
-
-	var cmd *exec.Cmd
-
-	if len(command) == 1 {
-		cmd = exec.Command(command[0])
-	} else {
-		cmd = exec.Command(command[0], command[1:]...)
-	}
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
-	if err != nil {
-		slog.Error("Failed to run action", "error", err)
-	} else {
-		slog.Info("Action completed successfully")
 	}
 }

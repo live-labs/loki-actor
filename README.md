@@ -16,7 +16,7 @@ loki:
 
 # each flow is built around separate query (to get a stream of logs)
 # in each flow, you can define multiple triggers, based on regex
-# in each trigger, you can define multiple actions
+# in each trigger, you can define an action to execute
 # if multiple triggers fire for the same line, only the first one will be run
 
 flows:
@@ -33,8 +33,9 @@ flows:
         # 'run' executes a command with the specified arguments.
         # substitutions are available for `${labels.*}` and `${values.ts} and ${values.message}`
         # Navigate your logs in grafana to see the available labels for your project
-        actions:
-          - run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
+        action:
+          type: 'cmd'
+          cmd_run: [ 'echo', '!!!!!', 'error', '${labels.host}', '${labels.container_name}', '${values.message}' ]
 ```
 
 See [example-config.yml](example-config.yml) for more examples.
