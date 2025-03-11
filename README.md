@@ -68,9 +68,9 @@ actions:
       ```
       ${values.message}
       ```
-    slack_concat: 0              # Optional: number of messages to concatenate
-    slack_concat_prefix: ""      # Optional: prefix for concatenated messages
-    slack_concat_suffix: ""      # Optional: suffix for concatenated messages
+    slack_concat: 12                # Optional: number of messages to concatenate
+    slack_concat_prefix: "```"      # Optional: prefix for concatenated messages
+    slack_concat_suffix: "```"      # Optional: suffix for concatenated messages
 ```
 
 2. **Command Actions**:
@@ -120,6 +120,8 @@ flows:
   specific_flow:
     extends: base_flow
     query: '{compose_project="myproject"}'
+    triggers:
+      # Additional triggers
 ```
 
 #### Triggers
@@ -128,11 +130,11 @@ Triggers define patterns to match in logs and actions to take:
 ```yaml
 triggers:
   - name: "error_trigger"
-    regex: "ERR|ERROR"              # Pattern to match
-    ignore_regex: "ignored_pattern" # Optional pattern to ignore
-    lines: 30                       # Optional: capture additional lines
-    action: "main_action"           # Action for matched line
-    next_lines_action: "follow_up"  # Action for additional captured lines
+    regex: "ERR|ERROR"                  # Pattern to match
+    ignore_regex: "status set to ERROR" # Optional pattern to ignore
+    lines: 30                           # Optional: capture additional lines
+    action: "main_action"               # Action for matched line
+    next_lines_action: "follow_up"      # Action for additional captured lines
 ```
 
 ### Complete Configuration Example
@@ -170,13 +172,12 @@ flows:
     abstract: true
     triggers:
       - name: "error_detection"
-        regex: "ERROR|Exception:"
-        ignore_regex: "Caused by:"
-        lines: 30
+        regex: "ERROR"
         action: "error_notification"
       
       - name: "stack_trace"
         regex: "Exception:"
+        ignore_regex: "Caused by:"
         lines: 30
         action: "stack_trace_first"
         next_lines_action: "stack_trace_next"

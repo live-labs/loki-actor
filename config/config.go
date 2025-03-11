@@ -86,10 +86,13 @@ func (f Flow) Derive(parent Flow) Flow {
 	if f.Query == "" && parent.Query != "" {
 		f.Query = parent.Query
 	}
-	if len(f.Triggers) == 0 && len(parent.Triggers) > 0 {
-		f.Triggers = make([]Trigger, len(parent.Triggers))
-		copy(f.Triggers, parent.Triggers)
-	}
+
+	// first go parent triggers, then current flow triggers
+
+	triggers := make([]Trigger, 0, len(parent.Triggers)+len(f.Triggers))
+	triggers = append(triggers, parent.Triggers...)
+	triggers = append(triggers, f.Triggers...)
+	f.Triggers = triggers
 
 	f.Extends = "" // clear the extends field to avoid circular references
 
