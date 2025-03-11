@@ -2,6 +2,7 @@ package actions
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"github.com/live-labs/lokiactor/config"
@@ -15,7 +16,7 @@ type CMDAction struct {
 	run []string
 }
 
-func NewCMDAction(cfg config.Action) *CMDAction {
+func NewCMDAction(ctx context.Context, cfg config.Action) *CMDAction {
 	a := &CMDAction{
 		run: make([]string, len(cfg.CmdRun)),
 	}

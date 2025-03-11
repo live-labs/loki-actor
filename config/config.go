@@ -13,6 +13,9 @@ type Action struct {
 	SlackWebhookURL      string `yaml:"slack_webhook_url"`
 	SlackTimeoutSec      int64  `yaml:"slack_timeout_sec"`
 	SlackMessageTemplate string `yaml:"slack_message_template"`
+	SlackConcat          int    `yaml:"slack_concat"`
+	SlackConctatPrefix   string `yaml:"slack_concat_prefix"`
+	SlackConcatSuffix    string `yaml:"slack_concat_suffix"`
 
 	// cmd action
 	CmdRun []string `yaml:"cmd_run"`

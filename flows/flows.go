@@ -32,7 +32,7 @@ func New(ctx context.Context, cfg config.Flow, lokiCfg config.Loki) (*Flow, erro
 	tgz := make([]*triggers.Trigger, len(cfg.Triggers))
 
 	for i, trigger := range cfg.Triggers {
-		t, err := triggers.New(trigger)
+		t, err := triggers.New(ctx, trigger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create trigger %s: %w", trigger.Name, err)
 		}

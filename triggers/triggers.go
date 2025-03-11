@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	"context"
 	"fmt"
 	"github.com/live-labs/lokiactor/actions"
 	"github.com/live-labs/lokiactor/config"
@@ -17,7 +18,7 @@ type Trigger struct {
 	NextLinesAction actions.Action // if lines > 0
 }
 
-func New(cfg config.Trigger) (*Trigger, error) {
+func New(ctx context.Context, cfg config.Trigger) (*Trigger, error) {
 	re, err := regexp.Compile(cfg.Regex)
 	if err != nil {
 		return nil, err
@@ -27,7 +28,7 @@ func New(cfg config.Trigger) (*Trigger, error) {
 		return nil, err
 	}
 
-	action, err := actions.New(cfg.Action)
+	action, err := actions.New(ctx, cfg.Action)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create action %s: %w", cfg.Action.Type, err)
@@ -40,7 +41,7 @@ func New(cfg config.Trigger) (*Trigger, error) {
 			return nil, fmt.Errorf("next lines action is required for multiline trigger %s", cfg.Name)
 		}
 
-		nextLinesAction, err = actions.New(*cfg.NextLinesAction)
+		nextLinesAction, err = actions.New(ctx, *cfg.NextLinesAction)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create next lines action %s: %w", cfg.NextLinesAction.Type, err)
 		}

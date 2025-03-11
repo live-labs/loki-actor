@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"context"
 	"fmt"
 	"github.com/live-labs/lokiactor/config"
 	"time"
@@ -14,12 +15,12 @@ type Action interface {
 }
 
 // New creates a new action based on the provided configuration.
-func New(cfg config.Action) (Action, error) {
+func New(ctx context.Context, cfg config.Action) (Action, error) {
 	switch cfg.Type {
 	case "slack":
-		return NewSlackAction(cfg), nil
+		return NewSlackAction(ctx, cfg), nil
 	case "cmd":
-		return NewCMDAction(cfg), nil
+		return NewCMDAction(ctx, cfg), nil
 	default:
 		return nil, fmt.Errorf("unknown action type: %s", cfg.Type)
 	}
