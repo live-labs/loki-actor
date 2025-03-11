@@ -10,6 +10,7 @@ loki:
 # - map of key-value pairs
 actions:
   base_slack_action:
+    abstract: true
     type: 'slack'
     slack_webhook_url: 'https://hooks.slack.com/services/TXXXXXXXXXX/BXXXXXXXXXX/JXXXXXXXXXXXXXXXX'
   err_action:
@@ -33,10 +34,8 @@ actions:
     cmd_run: [ 'echo', '${values.message}' ]
 
 flows:
-  - name: 'Example flow'
-    # LogQL query defines the log stream source
-    # Adjust the query according to your log labels and requirements
-    query: '{compose_project="example", container_name =~ "example.*"}'
+  - name: base_flow
+    abstract: true
     triggers:
       - name: 'error'
         # Pattern to match in the log message portion
@@ -62,3 +61,14 @@ flows:
         action: exception_line_1
         # Separate action for processing additional captured lines
         next_lines_action: exception_line_N
+
+  - name: 'Example flow'
+    # LogQL query defines the log stream source
+    # Adjust the query according to your log labels and requirements
+    extends: base_flow
+    query: '{compose_project="example", container_name =~ "example.*"}'
+
+  - name: 'Example 2 flow'
+    extends: base_flow
+    query: '{compose_project="foobar", container_name =~ "example.*"}'
+

@@ -10,7 +10,8 @@ import (
 type Action struct {
 	Type string `yaml:"type"` // slack, cmd
 
-	Extends string `yaml:"extends,omitempty"` // extends another action
+	Abstract bool   `yaml:"abstract,omitempty"` // if true, this action is not used directly, but is extended by other actions
+	Extends  string `yaml:"extends,omitempty"`  // extends another action
 
 	// slack action
 	SlackWebhookURL      string `yaml:"slack_webhook_url,omitempty"`
@@ -70,9 +71,29 @@ type Trigger struct {
 }
 
 type Flow struct {
-	Name     string    `yaml:"name,omitempty"`
+	Name     string `yaml:"name,omitempty"`
+	Abstract bool   `yaml:"abstract,omitempty"` // if true, this flow is not used directly, but is extended by other flows
+	Extends  string `yaml:"extends,omitempty"`  // extends another flow
+
 	Query    string    `yaml:"query,omitempty"`
 	Triggers []Trigger `yaml:"triggers,omitempty"`
+}
+
+func (f Flow) Derive(parent Flow) Flow {
+	if f.Name == "" && parent.Name != "" {
+		f.Name = parent.Name
+	}
+	if f.Query == "" && parent.Query != "" {
+		f.Query = parent.Query
+	}
+	if len(f.Triggers) == 0 && len(parent.Triggers) > 0 {
+		f.Triggers = make([]Trigger, len(parent.Triggers))
+		copy(f.Triggers, parent.Triggers)
+	}
+
+	f.Extends = "" // clear the extends field to avoid circular references
+
+	return f
 }
 
 type Loki struct {
@@ -83,7 +104,7 @@ type Loki struct {
 type Config struct {
 	Loki    Loki              `yaml:"loki,omitempty"`
 	Actions map[string]Action `yaml:"actions,omitempty"`
-	Flows   []Flow            `yaml:"flows,omitempty"`
+	Flows   map[string]Flow   `yaml:"flows,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -123,6 +144,13 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	// delete abstract actions from the config
+	for name, action := range config.Actions {
+		if action.Abstract {
+			delete(config.Actions, name)
+		}
+	}
+
 	// populate triggers with their actions
 	for i, flow := range config.Flows {
 		for j, trigger := range flow.Triggers {
@@ -143,6 +171,30 @@ func Load(path string) (*Config, error) {
 			}
 		}
 		config.Flows[i] = flow
+	}
+
+	// populate flows with their base flow
+	done = false
+	for !done {
+		done = true
+		for i, flow := range config.Flows {
+			if flow.Extends != "" {
+				done = false // at least one flow is not done, so we need to scan again
+				baseFlow, ok := config.Flows[flow.Extends]
+				if !ok {
+					return nil, fmt.Errorf("flow %s extends unknown flow %s", flow.Name, flow.Extends)
+				}
+				flow = flow.Derive(baseFlow)
+				config.Flows[i] = flow
+			}
+		}
+	}
+
+	// remove abstract flows from the config
+	for name, flow := range config.Flows {
+		if flow.Abstract {
+			delete(config.Flows, name)
+		}
 	}
 
 	return &config, nil

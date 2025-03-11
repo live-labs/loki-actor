@@ -27,10 +27,10 @@ actions:
     extends: base_action
 
 flows:
-  - name: 'Example flow'
+  - name: base_flow
     # LogQL query to get filtered logs from Loki. Be sure to adjust the query to match your log structure and make it
     # more specific if needed.
-    query: '{compose_project="example", container_name =~ "example.*"}'
+    base: true
     triggers:
       - name: 'error'
         # Regex to match error messages in logs. Is applied only to the message part of the log.
@@ -41,6 +41,14 @@ flows:
         # substitutions are available for `${labels.*}` and `${values.ts} and ${values.message}`
         # Navigate your logs in grafana to see the available labels for your project
         action: example
+
+  - name: 'container_1 flow'
+    extends: base_flow
+    query: '{compose_project="example", container_name =~ "container_1.*"}'
+    
+  - name: 'conainer_2 flow'
+    extends: base_flow
+    query: '{compose_project="example", container_name =~ "container_2.*"}'
 ```
 
 See [example-config.yml](example-config.yml) for more examples.
