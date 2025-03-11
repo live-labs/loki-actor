@@ -152,14 +152,14 @@ func Load(path string) (*Config, error) {
 	}
 
 	// populate triggers with their actions
-	for i, flow := range config.Flows {
-		for j, trigger := range flow.Triggers {
+	for name, flow := range config.Flows {
+		for i, trigger := range flow.Triggers {
 			action, ok := config.Actions[trigger.ActionName]
 			if !ok {
 				return nil, fmt.Errorf("trigger %s action %s not found", trigger.Name, trigger.ActionName)
 			}
 			trigger.Action = action
-			config.Flows[i].Triggers[j] = trigger
+			config.Flows[name].Triggers[i] = trigger
 
 			if trigger.Lines > 0 {
 				nextAction, ok := config.Actions[trigger.NextLinesActionName]
@@ -167,10 +167,11 @@ func Load(path string) (*Config, error) {
 					return nil, fmt.Errorf("trigger %s next lines action %s not found", trigger.Name, trigger.NextLinesActionName)
 				}
 				trigger.NextLinesAction = &nextAction
-				config.Flows[i].Triggers[j] = trigger
+				config.Flows[name].Triggers[i] = trigger
 			}
 		}
-		config.Flows[i] = flow
+		flow.Name = name
+		config.Flows[name] = flow
 	}
 
 	// populate flows with their base flow

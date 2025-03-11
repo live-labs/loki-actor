@@ -23,9 +23,13 @@ func New(ctx context.Context, cfg config.Trigger) (*Trigger, error) {
 	if err != nil {
 		return nil, err
 	}
-	ignoreRe, err := regexp.Compile(cfg.IgnoreRegex)
-	if err != nil {
-		return nil, err
+
+	var ignoreRe *regexp.Regexp
+	if cfg.IgnoreRegex != "" {
+		ignoreRe, err = regexp.Compile(cfg.IgnoreRegex)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	action, err := actions.New(ctx, cfg.Action)
